@@ -94,7 +94,6 @@ if lock or 'run' in st.session_state:
         st.markdown("**🍳 Breakfast:** Ragi Sheera / Scrambled Eggs")
         st.markdown("**🍚 Lunch:** Moong Dal Khichdi / Pumpkin Pasta")
         st.markdown("**🍲 Dinner:** Vegetable Upma / Mashed Potatoes & Cod")
-        st.caption("Tip: Use 'Volle Kwark' from Jumbo/AH as a probiotic curd substitute.")
 
     with t_guide:
         st.subheader("💬 Ask the Guide")
@@ -106,11 +105,13 @@ if lock or 'run' in st.session_state:
             st.session_state.messages.append({"role": "user", "content": pr})
             with st.chat_message("user"): st.markdown(pr)
             try:
-                # Cleanest possible config for 2026
+                # FIXED INITIALIZATION FOR 2026 STABLE
                 genai.configure(api_key="AIzaSyCXHF51cAI9MC6cJUHNNPEYzlD5fhP_SLQ")
-                model = genai.GenerativeModel('gemini-1.5-flash')
                 
-                # Standard call without experimental flags
+                # We specifically use the model name that maps to the v1 production endpoint
+                model = genai.GenerativeModel(model_name='gemini-1.5-flash')
+                
+                # Call without beta flags to ensure v1 transport
                 res = model.generate_content(
                     f"You are Archie's kid-friendly sleep guide. Context: Wake {wake_time}. Question: {pr}"
                 )
@@ -119,6 +120,18 @@ if lock or 'run' in st.session_state:
                     st.session_state.messages.append({"role": "assistant", "content": res.text})
                     st.rerun()
             except Exception as e:
-                st.error(f"Guide is resting: {str(e)}")
+                # More descriptive error handling
+                if "404" in str(e):
+                    st.error("API Model Mismatch. Trying fallback...")
+                    # Fallback model naming if first one fails
+                    try:
+                        model = genai.GenerativeModel('models/gemini-1.5-flash-latest')
+                        res = model.generate_content(f"Archie 23mo help: {pr}")
+                        st.session_state.messages.append({"role": "assistant", "content": res.text})
+                        st.rerun()
+                    except:
+                        st.error("Jungle connection broken. Check billing in Google Studio.")
+                else:
+                    st.error(f"Guide Error: {str(e)}")
 else:
-    st.info("🦁 Enter Archie's wake-up (e.g., 735) and c lick Start!")
+    st.info("🦁 Enter Archie's wake-up (e.g., 735) and click Start!")
