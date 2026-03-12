@@ -38,8 +38,8 @@ with st.container():
     st.markdown('<div class="input-card">', unsafe_allow_html=True)
     st.subheader("🍃 Morning Check-in")
     c1, c2 = st.columns(2)
-    w_in = c1.text_input("☀️ Wake (e.g. 735)", "")
-    s_in = c2.text_input("🌙 Sleep (e.g. 2130)", "")
+    w_in = c1.text_input("☀️ Wake (e.g. 625)", "")
+    s_in = c2.text_input("🌙 Last Night Sleep", "")
     n_in = st.text_input("😴 Nap Started? (Optional)", "")
     lock = st.button("🌟 START ADVENTURE")
     st.markdown('</div>', unsafe_allow_html=True)
@@ -57,28 +57,43 @@ if lock or 'run' in st.session_state:
     prev_sleep_dt = datetime.combine(today - timedelta(days=1), sleep_time)
     target_7am = datetime.combine(today, time(7, 0))
 
-    is_early = wake_dt < (target_7am - timedelta(minutes=90))
+    # Recovery logic (6:25 AM = Early Wake)
+    is_early = wake_dt < (target_7am - timedelta(minutes=30))
     w1_len = 5.5 if is_early else 6.0
     night_hrs = ((wake_dt - prev_sleep_dt).total_seconds() / 3600)
     
     nap_start_dt = datetime.combine(today, nap_manual) if nap_manual else wake_dt + timedelta(hours=w1_len)
     nap_end_dt = nap_start_dt + timedelta(minutes=90)
     
+    # Evening Sequence
     dinner_dt = datetime.combine(today, time(19, 15))
     milk_dt = dinner_dt + timedelta(hours=1)
+    # Bedtime: exactly 7h after nap, but safety check for digestion
     bedtime_dt = max(nap_end_dt + timedelta(hours=7), milk_dt + timedelta(minutes=45))
 
     # DASHBOARD
     m1, m2, m3 = st.columns(3)
-    m1.metric("Sleep", f"{night_hrs:.1f}h")
-    m2.metric("Bedtime", bedtime_dt.strftime('%H:%M'))
+    m1.metric("Night Sleep", f"{night_hrs:.1f}h")
+    m2.metric("Target Bed", bedtime_dt.strftime('%H:%M'))
     gap = (wake_dt - target_7am).total_seconds()/60
     m3.metric("Gap", f"{gap:.0f}m")
 
-    # WHATSAPP
-    sched = [(wake_dt, "🥛 Wake + Milk"), (wake_dt + timedelta(minutes=25), "🍓 Fruit"), (wake_dt + timedelta(hours=2), "🍳 Breakfast"), (nap_start_dt - timedelta(minutes=75), "🍚 Lunch"), (nap_start_dt, f"😴 Nap Start ({w1_len}h Window)"), (nap_end_dt, "🎺 Wake Up"), (nap_end_dt + timedelta(minutes=15), "🥨 Snack"), (dinner_dt, "🍲 Dinner"), (milk_dt, "🥛 Night Milk"), (bedtime_dt, "✨ Bedtime (7h Window)")]
+    # WHATSAPP WITH FRUIT ADDED
+    sched = [
+        (wake_dt, "🥛 Wake + Milk"),
+        (wake_dt + timedelta(minutes=25), "🍓 Morning Fruit"),
+        (wake_dt + timedelta(hours=2), "🍳 Breakfast"),
+        (nap_start_dt - timedelta(minutes=70), "🍚 Lunch"),
+        (nap_start_dt, f"😴 Nap ({w1_len}h Window)"),
+        (nap_end_dt, "🎺 Wake Up"),
+        (nap_end_dt + timedelta(minutes=15), "🥨 Post-Nap Snack"),
+        (nap_end_dt + timedelta(hours=2.5), "🍎 Evening Fruit"),
+        (dinner_dt, "🍲 Dinner"),
+        (milk_dt, "🥛 Night Milk (1h post-dinner)"),
+        (bedtime_dt, "✨ Bedtime (7h Window)")
+    ]
     wa_text = f"*🦁 Archie - {today.strftime('%d %b')}*\n" + "\n".join([f"• {t.strftime('%H:%M')}: {a}" for t, a in sched])
-    st.markdown(f'<a href="https://wa.me/?text={urllib.parse.quote(wa_text)}" target="_blank" class="whatsapp-btn">📲 WhatsApp Family</a>', unsafe_allow_html=True)
+    st.markdown(f'<a href="https://wa.me/?text={urllib.parse.quote(wa_text)}" target="_blank" class="whatsapp-btn">📲 WhatsApp to Family</a>', unsafe_allow_html=True)
 
     st.divider()
 
@@ -92,8 +107,9 @@ if lock or 'run' in st.session_state:
     with t_kitchen:
         st.subheader("🥘 Archie's Menu (Rotterdam)")
         st.markdown("**🍳 Breakfast:** Ragi Sheera / Scrambled Eggs")
-        st.markdown("**🍚 Lunch:** Moong Dal Khichdi / Pumpkin Pasta")
-        st.markdown("**🍲 Dinner:** Vegetable Upma / Mashed Potatoes & Cod")
+        st.markdown("**🍎 Snacks:** Makhana / AH Conference Pears")
+        st.markdown("**🍲 Dinner:** Veggie Upma / Creamy Pumpkin Pasta")
+        st.caption("Available at Jumbo/AH/Toko Rotterdam.")
 
     with t_guide:
         st.subheader("💬 Ask the Guide")
@@ -105,33 +121,14 @@ if lock or 'run' in st.session_state:
             st.session_state.messages.append({"role": "user", "content": pr})
             with st.chat_message("user"): st.markdown(pr)
             try:
-                # FIXED INITIALIZATION FOR 2026 STABLE
+                # Production API config
                 genai.configure(api_key="AIzaSyCXHF51cAI9MC6cJUHNNPEYzlD5fhP_SLQ")
-                
-                # We specifically use the model name that maps to the v1 production endpoint
-                model = genai.GenerativeModel(model_name='gemini-1.5-flash')
-                
-                # Call without beta flags to ensure v1 transport
-                res = model.generate_content(
-                    f"You are Archie's kid-friendly sleep guide. Context: Wake {wake_time}. Question: {pr}"
-                )
-                
-                if res and res.text:
+                model = genai.GenerativeModel('gemini-1.5-flash')
+                res = model.generate_content(f"You are Archie's sleep guide. Context: Wake {wake_time}. Early Wake: {is_early}. Question: {pr}")
+                if res.text:
                     st.session_state.messages.append({"role": "assistant", "content": res.text})
                     st.rerun()
             except Exception as e:
-                # More descriptive error handling
-                if "404" in str(e):
-                    st.error("API Model Mismatch. Trying fallback...")
-                    # Fallback model naming if first one fails
-                    try:
-                        model = genai.GenerativeModel('models/gemini-1.5-flash-latest')
-                        res = model.generate_content(f"Archie 23mo help: {pr}")
-                        st.session_state.messages.append({"role": "assistant", "content": res.text})
-                        st.rerun()
-                    except:
-                        st.error("Jungle connection broken. Check billing in Google Studio.")
-                else:
-                    st.error(f"Guide Error: {str(e)}")
+                st.error(f"Guide is resting: {str(e)}")
 else:
-    st.info("🦁 Enter Archie's wake-up (e.g., 735) and click Start!")
+    st.info("🦁 Enter Archie's wake-up (625) and click Start!")
