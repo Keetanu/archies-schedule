@@ -2,3 +2,5 @@ streamlit
 google-generativeai
 datetime
 streamlit-js-eval
+pandas
+numpy
