@@ -102,4 +102,91 @@ if st.session_state.run:
     today = datetime.today()
     wake_dt = datetime.combine(today, wake_time)
     prev_sleep_dt = datetime.combine(today - timedelta(days=1), sleep_time)
-    target _7am =
+    target_7am = datetime.combine(today, time(7, 0))
+
+    # Night Waking logic
+    nw_dur = 0
+    nw_s, nw_e = clean_time(nw_s_in), clean_time(nw_e_in)
+    if nw_s and nw_e:
+        dt1, dt2 = datetime.combine(today, nw_s), datetime.combine(today, nw_e)
+        if dt2 < dt1: dt2 += timedelta(days=1)
+        nw_dur = (dt2 - dt1).total_seconds() / 3600
+
+    # 5 AM Recovery Mode
+    is_early = wake_dt < (target_7am - timedelta(minutes=90))
+    w1_len = 5.5 if is_early else 6.0
+    
+    # Core Math
+    night_hrs = ((wake_dt - prev_sleep_dt).total_seconds() / 3600) - nw_dur
+    nap_start_dt = datetime.combine(today, nap_manual) if nap_manual else wake_dt + timedelta(hours=w1_len)
+    nap_end_dt = nap_start_dt + timedelta(minutes=90)
+    
+    # Evening Sequence
+    dinner_dt = datetime.combine(today, time(19, 15))
+    milk_dt = dinner_dt + timedelta(hours=1)
+    bedtime_dt = max(nap_end_dt + timedelta(hours=7), milk_dt + timedelta(minutes=45))
+
+    # 5. DASHBOARD DISPLAY
+    m1, m2, m3 = st.columns(3)
+    m1.metric("Sleep", f"{night_hrs:.1f}h")
+    m2.metric("Bedtime", bedtime_dt.strftime('%I:%M %p'))
+    gap = (wake_dt - target_7am).total_seconds()/60
+    m3.metric("7AM Gap", f"{gap:.0f}m")
+
+    # WhatsApp Export with Date
+    sched = [
+        (wake_dt, "🥛 Wake + Milk"),
+        (wake_dt + timedelta(minutes=25), "🍓 Morning Fruit"),
+        (wake_dt + timedelta(hours=2), "🍳 Main Breakfast"),
+        (nap_start_dt - timedelta(minutes=75), "🍚 Lunch (15m Feast)"),
+        (nap_start_dt, f"😴 Nap Start ({w1_len}h Window)"),
+        (nap_end_dt, "🎺 Wake Up (90m Nap)"),
+        (nap_end_dt + timedelta(minutes=15), "🥨 Post-Nap Snack"),
+        (nap_end_dt + timedelta(hours=1.5), "🏃 Peak Activity"),
+        (dinner_dt, "🍲 Dinner (Recipe #11)"),
+        (milk_dt, "🥛 Night Milk (1h post-dinner)"),
+        (bedtime_dt, "✨ Bedtime (7h Window)")
+    ]
+    wa_date = today.strftime('%A, %b %d')
+    wa_text = f"*🦁 Archie's Day - {wa_date}*\n" + "\n".join([f"• {t.strftime('%I:%M %p')}: {a}" for t, a in sched])
+    st.markdown(f'<a href="https://wa.me/?text={urllib.parse.quote(wa_text)}" target="_blank" class="whatsapp-btn">📲 WhatsApp to Family</a>', unsafe_allow_html=True)
+
+    # Tabs
+    t_plan, t_graph, t_guide = st.tabs(["📜 Plan", "📊 Sleepy Meter", "💬 Jungle Chat"])
+
+    with t_plan:
+        df = pd.DataFrame(sched, columns=["Time", "Activity"])
+        df["Time"] = df["Time"].apply(lambda x: x.strftime('%I:%M %p'))
+        st.table(df)
+
+    with t_graph:
+        st.write("### 🔋 Archie's Sleep Pressure")
+        times = [wake_dt + timedelta(hours=i) for i in range(16)]
+        pressures = []
+        for t in times:
+            if t < nap_start_dt: p = ((t - wake_dt).total_seconds()/3600)*(100/w1_len)
+            elif nap_start_dt <= t <= nap_end_dt: p = 15
+            else: p = 20 + (((t - nap_end_dt).total_seconds()/3600)*(100/7.0))
+            pressures.append(min(p, 100))
+        st.area_chart(pd.DataFrame({'Pressure': pressures}, index=times), color="#4ade80")
+
+    with t_guide:
+        if "messages" not in st.session_state: st.session_state.messages = []
+        for m in st.session_state.messages:
+            with st.chat_message(m["role"]): st.markdown(m["content"])
+        
+        if pr := st.chat_input("Ask a question..."):
+            st.session_state.messages.append({"role": "user", "content": pr})
+            with st.chat_message("user"): st.markdown(pr)
+            try:
+                genai.configure(api_key="AIzaSyCXHF51cAI9MC6cJUHNNPEYzlD5fhP_SLQ")
+                model = genai.GenerativeModel('gemini-1.5-flash')
+                res = model.generate_content(f"You are a kid-friendly sleep guide for 23mo Archie. Context: Wake {wake_time}. User asks: {pr}")
+                if res.text:
+                    st.session_state.messages.append({"role": "assistant", "content": res.text})
+                    st.rerun()
+            except Exception as e:
+                st.error("Jungle Guide is taking a nap. Try again in a minute!")
+else:
+    st.info("🦁 Ready for a new day? Type Archie's times above (e.g. 0730) and click 'Generate'!")
+ 
