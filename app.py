@@ -1,71 +1,117 @@
 import streamlit as st
 import google.generativeai as genai
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, time
 
-# 1. SETUP & JUNGLE THEME
-st.set_page_config(page_title="Archie's Schedule", page_icon="🦁")
+# 1. SETUP & BEAUTIFUL JUNGLE THEME
+st.set_page_config(page_title="Archie's Schedule", page_icon="🦁", layout="wide")
+
 st.markdown("""
     <style>
-    .main { background-color: #f0f5f1; }
-    h1 { color: #2e7d32; font-family: 'Trebuchet MS'; }
-    .stButton>button { background-color: #4caf50; color: white; border-radius: 20px; }
+    .main { background: linear-gradient(135deg, #e8f5e9 0%, #c8e6c9 100%); }
+    .stApp { background-image: url("https://www.transparenttextures.com/patterns/leaf.png"); }
+    h1, h2, h3 { color: #1b5e20; font-family: 'Trebuchet MS', sans-serif; }
+    .stMetric { background-color: #ffffff; padding: 20px; border-radius: 15px; box-shadow: 0 4px 6px rgba(0,0,0,0.1); border-left: 5px solid #4caf50; }
+    .info-card { background-color: #fff9c4; padding: 15px; border-radius: 10px; border-left: 5px solid #fbc02d; margin-bottom: 10px; font-size: 0.9rem; }
     </style>
     """, unsafe_allow_html=True)
 
-st.title("🦁 Archie's Schedule")
-
-# 2. INPUTS
+# 2. SIDEBAR COMMAND CENTER
 with st.sidebar:
-    st.header("🌳 Jungle Inputs")
-    wake_time = st.time_input("Morning Wake-up", value=datetime.strptime("07:00", "%H:%M"))
-    nap_start = st.time_input("Nap Started At")
+    st.image("https://img.icons8.com/color/96/000000/jungle.png")
+    st.header("🌳 Jungle Settings")
+    
+    # Country Toggle (Default: India)
+    location = st.radio("📍 Current Jungle", ["India (IST)", "Netherlands (CET)"], index=0)
+    is_netherlands = location == "Netherlands (CET)"
     
     st.divider()
-    st.header("🍲 Meal Log")
-    meal = st.selectbox("Last Meal", ["Breakfast", "Lunch", "Snack", "Dinner"])
-    status = st.radio("How did he eat?", ["Great", "Pickys", "Refused"])
+    
+    wake_time = st.time_input("☀️ Morning Wake-up", value=time(7, 0))
+    prev_sleep_time = st.time_input("🌙 Previous Night Sleep", value=time(21, 30))
+    
+    st.subheader("🦉 Night Waking")
+    night_wake_start = st.time_input("Woke up at", value=None)
+    night_wake_end = st.time_input("Back to sleep at", value=None)
+    
+    st.subheader("😴 Daytime Nap")
+    nap_start = st.time_input("Nap Started At (Optional)", value=None)
+    
+    recalculate = st.button("🌿 Update Archie's Day")
 
-# 3. AGE-BASED LOGIC (23 Months)
-# Calculation: 90 min nap + 6 hour wake window
-nap_end_dt = datetime.combine(datetime.today(), nap_start) + timedelta(minutes=90)
+# 3. LOGIC ENGINE
+genai.configure(api_key="AIzaSyAtlrIyT0LrtmGetXY-bGuEKJHufvzdF-0")
+
+today = datetime.today()
+wake_dt = datetime.combine(today, wake_time)
+
+# Night Waking Logic
+night_wake_duration = 0
+if night_wake_start and night_wake_end:
+    start_dt = datetime.combine(today, night_wake_start)
+    end_dt = datetime.combine(today, night_wake_end)
+    if end_dt < start_dt: end_dt += timedelta(days=1)
+    night_wake_duration = (end_dt - start_dt).total_seconds() / 3600
+
+# Night Sleep Duration
+sleep_dt = datetime.combine(today - timedelta(days=1), prev_sleep_time)
+actual_night_sleep = ((wake_dt - sleep_dt).total_seconds() / 3600) - night_wake_duration
+
+# Schedule Calculations (23 months age logic)
+nap_buffer = 6 if night_wake_duration < 0.5 else 5.5
+nap_start_rec = wake_dt + timedelta(hours=nap_buffer)
+nap_end_dt = (datetime.combine(today, nap_start) if nap_start else nap_start_rec) + timedelta(minutes=90)
 bedtime_dt = nap_end_dt + timedelta(hours=6)
 
-# 4. DASHBOARD DISPLAY
-col1, col2 = st.columns(2)
-with col1:
-    st.metric("Nap End (Hard Wake)", nap_end_dt.strftime('%I:%M %p'))
-    st.caption("Target 90 mins to protect night sleep")
-with col2:
-    st.metric("Bedtime Goal", bedtime_dt.strftime('%I:%M %p'))
-    st.caption("Ensures 6h wake window")
+# 4. DASHBOARD
+st.title(f"🦁 Archie's {location} Schedule")
 
-st.subheader("📅 Remaining Daily Plan")
-st.write(f"☀️ **Sunlight Walk:** { (nap_end_dt + timedelta(minutes=30)).strftime('%I:%M %p') }")
-st.write(f"🥩 **Dinner (Tiger Fuel):** { (bedtime_dt - timedelta(hours=2)).strftime('%I:%M %p') }")
-st.write(f"🥛 **Milk Bridge:** { (bedtime_dt - timedelta(minutes=45)).strftime('%I:%M %p') }")
+c1, c2, c3 = st.columns(3)
+with c1: st.metric("Actual Night Sleep", f"{actual_night_sleep:.1f} hrs")
+with c2: st.metric("Night Wake Time", f"{night_wake_duration*60:.0f} mins")
+with c3: st.metric("Target Bedtime", bedtime_dt.strftime('%I:%M %p'))
 
-# 5. LIVE GEMINI CHAT BOX
 st.divider()
-st.subheader("💬 Chat with Gemini")
-api_key = st.text_input("Enter Gemini API Key to Chat", type="password")
 
-if api_key:
-    genai.configure(api_key=api_key)
-    model = genai.GenerativeModel('gemini-pro')
+# 5. SCHEDULE & INFO
+tab_col, info_col = st.columns([2, 1])
+
+with tab_col:
+    st.subheader("📅 The Golden Path")
+    sched = [
+        {"Time": wake_dt.strftime('%I:%M %p'), "Activity": "🦁 Lion Roar (Wake + Milk)"},
+        {"Time": (wake_dt + timedelta(hours=1.5)).strftime('%I:%M %p'), "Activity": "🍎 Breakfast (High Protein)"},
+        {"Time": (wake_dt + timedelta(hours=5)).strftime('%I:%M %p'), "Activity": "🐘 Hearty Lunch"},
+        {"Time": (nap_start.strftime('%I:%M %p') if nap_start else nap_start_rec.strftime('%I:%M %p')), "Activity": "😴 Nap Start"},
+        {"Time": nap_end_dt.strftime('%I:%M %p'), "Activity": "🎺 Hard Wake (Slow Fade)"},
+        {"Time": (nap_end_dt + timedelta(minutes=45)).strftime('%I:%M %p'), "Activity": "🌳 Outdoor Walk"},
+        {"Time": (bedtime_dt - timedelta(hours=2)).strftime('%I:%M %p'), "Activity": "🐅 Dinner (Recipe #11)"},
+        {"Time": (bedtime_dt - timedelta(minutes=45)).strftime('%I:%M %p'), "Activity": "🥛 Night Bridge Milk"},
+        {"Time": bedtime_dt.strftime('%I:%M %p'), "Activity": "✨ Bedtime"}
+    ]
+    st.table(sched)
+
+with info_col:
+    st.subheader("💡 Jungle Wisdom")
+    location_advice = "Focus on 4:30 PM sunlight in Rotterdam to lock in the timezone!" if is_netherlands else "Keep the room cool; India's heat can cause early wakes."
+    st.markdown(f"""
+    <div class="info-card"><strong>🌍 Location Advice:</strong><br>{location_advice}</div>
+    <div class="info-card"><strong>🍲 Recipe Hint:</strong><br>Use slow-burning carbs for dinner tonight to support a 10+ hour stretch.</div>
+    <div class="info-card"><strong>⚠️ Alert:</strong><br>If Archie seems 'tired-wired' at 8:30 PM, start the milk early.</div>
+    """, unsafe_allow_html=True)
+
+# 6. LIVE CHAT
+st.divider()
+st.subheader("💬 Chat with Archie's Jungle Guide")
+if "messages" not in st.session_state: st.session_state.messages = []
+for msg in st.session_state.messages:
+    with st.chat_message(msg["role"]): st.markdown(msg["content"])
+
+if prompt := st.chat_input("Ask about Archie's day..."):
+    st.session_state.messages.append({"role": "user", "content": prompt})
+    with st.chat_message("user"): st.markdown(prompt)
     
-    if "messages" not in st.session_state:
-        st.session_state.messages = []
-
-    for message in st.session_state.messages:
-        with st.chat_message(message["role"]):
-            st.markdown(message["content"])
-
-    if prompt := st.chat_input("Ask about Archie's mood or meals..."):
-        st.session_state.messages.append({"role": "user", "content": prompt})
-        with st.chat_message("user"):
-            st.markdown(prompt)
-        
-        response = model.generate_content(prompt)
-        st.session_state.messages.append({"role": "assistant", "content": response.text})
-        with st.chat_message("assistant"):
-            st.markdown(response.text)
+    model = genai.GenerativeModel('gemini-pro')
+    ctx = f"Archie, 23mo. Location: {location}. Night sleep: {actual_night_sleep}h. Question: {prompt}"
+    response = model.generate_content(ctx)
+    st.session_state.messages.append({"role": "assistant", "content": response.text})
+    with st.chat_message("assistant"): st.markdown(response.text)
