@@ -1,11 +1,11 @@
 import streamlit as st
 import google.generativeai as genai
+from google.generativeai.types import RequestOptions
 import pandas as pd
-import numpy as np
 from datetime import datetime, timedelta, time
 import urllib.parse
 
-# 1. PLAYFUL JUNGLE THEME (Forced Light Mode)
+# 1. PLAYFUL JUNGLE THEME
 st.set_page_config(page_title="Archie's Day", page_icon="🦁", layout="centered")
 
 st.markdown("""
@@ -24,7 +24,6 @@ st.markdown("""
 def clean_time(t_str):
     if not t_str: return None
     clean = t_str.replace(":", "").strip()
-    # Auto-pad: "735" -> "0735"
     if len(clean) == 3 and clean.isdigit(): clean = "0" + clean
     if len(clean) == 4 and clean.isdigit():
         try:
@@ -33,7 +32,7 @@ def clean_time(t_str):
         except: return None
     return None
 
-# 3. TOP-LEVEL CONTENT
+# 3. INPUT SECTION
 st.markdown("<h1>🌳 🦁 🦒 🌳<br>Archie's Jungle</h1>", unsafe_allow_html=True)
 
 with st.container():
@@ -51,7 +50,6 @@ if lock or 'run' in st.session_state:
     st.session_state.run = True
     today = datetime.today()
     
-    # Defaults if entry is blank
     wake_time = clean_time(w_in) or time(7, 0)
     sleep_time = clean_time(s_in) or time(21, 30)
     nap_manual = clean_time(n_in)
@@ -60,7 +58,6 @@ if lock or 'run' in st.session_state:
     prev_sleep_dt = datetime.combine(today - timedelta(days=1), sleep_time)
     target_7am = datetime.combine(today, time(7, 0))
 
-    # Recovery logic (5AM Mode)
     is_early = wake_dt < (target_7am - timedelta(minutes=90))
     w1_len = 5.5 if is_early else 6.0
     night_hrs = ((wake_dt - prev_sleep_dt).total_seconds() / 3600)
@@ -68,10 +65,8 @@ if lock or 'run' in st.session_state:
     nap_start_dt = datetime.combine(today, nap_manual) if nap_manual else wake_dt + timedelta(hours=w1_len)
     nap_end_dt = nap_start_dt + timedelta(minutes=90)
     
-    # 1-hour Dinner-Milk Gap Logic
     dinner_dt = datetime.combine(today, time(19, 15))
     milk_dt = dinner_dt + timedelta(hours=1)
-    # Bedtime: exactly 7h after nap, but safety check for digestion
     bedtime_dt = max(nap_end_dt + timedelta(hours=7), milk_dt + timedelta(minutes=45))
 
     # DASHBOARD
@@ -88,7 +83,6 @@ if lock or 'run' in st.session_state:
 
     st.divider()
 
-    # TABS
     t_plan, t_kitchen, t_guide = st.tabs(["📜 Plan", "🥘 Kitchen", "💬 Guide"])
 
     with t_plan:
@@ -97,14 +91,14 @@ if lock or 'run' in st.session_state:
         st.table(df)
 
     with t_kitchen:
-        st.subheader("🥘 Archie's Menu (Global & Indian)")
-        st.markdown("**🍳 Breakfast:** Ragi Sheera (Indian) / Scrambled Eggs (Global)")
-        st.markdown("**🍚 Lunch:** Dal Khichdi (Indian) / Pumpkin Pasta (Global)")
-        st.markdown("**🍲 Dinner:** Vegetable Upma (Indian) / Mashed Potato & Fish (Global)")
-        st.caption("Ingredients available at AH, Jumbo, or Rotterdam Tokos.")
+        st.subheader("🥘 Archie's Menu")
+        st.markdown("**🍳 Breakfast:** Ragi Sheera / Scrambled Eggs")
+        st.markdown("**🍚 Lunch:** Moong Dal Khichdi / Pumpkin Pasta")
+        st.markdown("**🍲 Dinner:** Vegetable Upma / Mashed Potatoes & Cod")
+        st.caption("Tip: Use 'Volle Kwark' from Jumbo/AH as a probiotic curd substitute.")
 
     with t_guide:
-        st.subheader("💬 Ask the Jungle Guide")
+        st.subheader("💬 Ask the Guide")
         if "messages" not in st.session_state: st.session_state.messages = []
         for m in st.session_state.messages:
             with st.chat_message(m["role"]): st.markdown(m["content"])
@@ -113,15 +107,20 @@ if lock or 'run' in st.session_state:
             st.session_state.messages.append({"role": "user", "content": pr})
             with st.chat_message("user"): st.markdown(pr)
             try:
-                # STABLE PRODUCTION CONFIG
+                # BYPASSING v1beta EXPLICITLY
                 genai.configure(api_key="AIzaSyCXHF51cAI9MC6cJUHNNPEYzlD5fhP_SLQ")
-                # Using the v1 stable model name
                 model = genai.GenerativeModel('gemini-1.5-flash')
-                res = model.generate_content(f"You are Archie's kid-friendly sleep guide. Context: Wake {wake_time}. Question: {pr}")
+                
+                # Using v1 stable options
+                res = model.generate_content(
+                    f"You are Archie's kid-friendly sleep guide. Context: Wake {wake_time}. Question: {pr}",
+                    request_options=RequestOptions(api_version='v1')
+                )
+                
                 if res and res.text:
                     st.session_state.messages.append({"role": "assistant", "content": res.text})
                     st.rerun()
             except Exception as e:
                 st.error(f"Guide is resting: {str(e)}")
 else:
-    st.info("🦁 Enter Archie's wake-up (e.g., 735) and c lick Start!")
+    st.info("🦁 Enter Archie's wake-up (e.g., 735) and click Start!")
