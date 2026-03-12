@@ -13,7 +13,7 @@ st.markdown("""
     <style>
     .main { background: #fdfdfd; }
     h1, h2, h3 { color: #2e7d32; font-family: 'Helvetica Neue', sans-serif; }
-    .stMetric { background-color: #f1f8e9; padding: 15px; border-radius: 12px; }
+    .stMetric { background-color: #f1f8e9; padding: 15px; border-radius: 12px; border-bottom: 4px solid #4caf50; }
     .whatsapp-btn { background-color: #25D366; color: white; padding: 10px 20px; border-radius: 10px; text-decoration: none; font-weight: bold; display: inline-block; }
     .stTextInput input { font-size: 1.2rem; font-weight: bold; color: #1b5e20; }
     </style>
@@ -33,7 +33,7 @@ def clean_time(t_str):
 with st.sidebar:
     st.title("🦁 Jungle Controls")
     
-    # Auto-Location (Requires streamlit-js-eval)
+    # Auto-Location Detection
     loc = get_geolocation()
     detected_location = "India (IST)"
     if loc:
@@ -46,7 +46,7 @@ with st.sidebar:
     
     st.divider()
     st.subheader("⌨️ HHMM Entry")
-    w_in = st.text_input("☀️ Wake-up", "0700")
+    w_in = st.text_input("☀️ Wake-up (e.g. 0700)", "0700")
     s_in = st.text_input("🌙 Last Night Sleep", "2130")
     
     with st.expander("🦉 Night Waking"):
@@ -59,15 +59,10 @@ with st.sidebar:
     lock = st.button("🌿 LOCK & GENERATE", use_container_width=True, type="primary")
 
 # 3. LOGIC ENGINE
-# Initialize state to prevent blank screen on first load
-if 'init' not in st.session_state:
-    st.session_state.init = False
-
-if lock:
+if lock or 'init' not in st.session_state:
     st.session_state.init = True
-
-if st.session_state.init:
     today = datetime.today()
+    
     wake_time = clean_time(w_in) or time(7, 0)
     prev_sleep_time = clean_time(s_in) or time(21, 30)
     n_wake_s, n_wake_e = clean_time(nw_s_in), clean_time(nw_e_in)
@@ -83,30 +78,29 @@ if st.session_state.init:
         if dt2 < dt1: dt2 += timedelta(days=1)
         nw_dur = (dt2 - dt1).total_seconds() / 3600
 
-    # Sleep Metrics
+    # 6h/7h Window Logic
     night_sleep = ((wake_dt - sleep_dt).total_seconds() / 3600) - nw_dur
     nap_start_dt = datetime.combine(today, nap_manual) if nap_manual else wake_dt + timedelta(hours=6)
     nap_end_dt = nap_start_dt + timedelta(minutes=90)
     
-    # Strict Evening Sequence: Dinner -> 1h -> Milk -> Bed
+    # Evening Sequence
     dinner_dt = datetime.combine(today, time(19, 15))
-    milk_dt = dinner_dt + timedelta(hours=1)
-    # Bedtime is 7h from nap end, but must be at least 45m after milk
+    milk_dt = dinner_dt + timedelta(hours=1) # Exactly 1h post-dinner
     bedtime_dt = max(nap_end_dt + timedelta(hours=7), milk_dt + timedelta(minutes=45))
 
-    # 4. DASHBOARD DISPLAY
+    # 4. DASHBOARD
     st.title(f"🦁 Archie's Dashboard")
     curr_date = today.strftime('%A, %d %b %Y')
     st.subheader(f"{curr_date} | {location}")
 
     c1, c2, c3 = st.columns(3)
-    c1.metric("Night Sleep", f"{night_sleep:.1f}h")
+    c1.metric("Night Sleep", f"{night_sleep:.1f}h", delta=f"{night_sleep-10.75:.1f}h")
     c2.metric("Target Bedtime", bedtime_dt.strftime('%I:%M %p'))
     gap_val = (wake_dt - datetime.combine(today, time(7,0))).total_seconds()/60
     c3.metric("7AM Target Gap", f"{gap_val:.0f}m")
 
-    # WhatsApp Formatting
-    wa_msg = f"*🦁 Archie's Day - {curr_date}*\n\n"
+    # WhatsApp Link
+    wa_msg = f"*🦁 Archie's Schedule - {curr_date}*\n\n"
     sched = [
         (wake_dt, "🥛 Wake + Milk"),
         (wake_dt + timedelta(minutes=25), "🍓 Morning Fruit"),
@@ -118,8 +112,8 @@ if st.session_state.init:
         (nap_end_dt + timedelta(hours=1.5), "🏃 PEAK ACTIVITY ZONE"),
         (nap_end_dt + timedelta(hours=2.5), "🍌 Afternoon Fruit"),
         (dinner_dt, "🍲 Dinner (Recipe #11)"),
-        (milk_dt, "🥛 Pre-Sleep Milk (1h post-dinner)"),
-        (bedtime_dt, "✨ Bedtime (Strict 7h Window)")
+        (milk_dt, "🥛 Pre-Sleep Milk (1h after dinner)"),
+        (bedtime_dt, "✨ Bedtime (7h Window)")
     ]
     for t, a in sched:
         wa_msg += f"• {t.strftime('%I:%M %p')}: {a}\n"
@@ -136,7 +130,7 @@ if st.session_state.init:
         st.table(df)
 
     with t2:
-        st.subheader("Adenosine (Sleep Pressure) Sequential Timeline")
+        st.subheader("Adenosine (Sleep Pressure) Timeline")
         times = [wake_dt + timedelta(hours=i) for i in range(16)]
         pressures = []
         for t in times:
@@ -148,8 +142,7 @@ if st.session_state.init:
 
     with t3:
         st.subheader("💬 Ask Archie's Jungle Guide")
-        if "messages" not in st.session_state:
-            st.session_state.messages = []
+        if "messages" not in st.session_state: st.session_state.messages = []
         for msg in st.session_state.messages:
             with st.chat_message(msg["role"]): st.markdown(msg["content"])
 
@@ -158,14 +151,13 @@ if st.session_state.init:
             with st.chat_message("user"): st.markdown(pr)
             
             try:
-                genai.configure(api_key="AIzaSyAtlrIyT0LrtmGetXY-bGuEKJHufvzdF-0")
+                # NEW API KEY
+                genai.configure(api_key="AIzaSyCXHF51cAI9MC6cJUHNNPEYzlD5fhP_SLQ")
                 model = genai.GenerativeModel('gemini-1.5-flash')
-                ctx = f"Archie 23mo. Sleep: {night_sleep}h. Gap: {gap_val}m. Prompt: {pr}"
+                ctx = f"Archie 23mo. Sleep: {night_sleep}h. Gap: {gap_val}m. {pr}"
                 response = model.generate_content(ctx)
                 if response and hasattr(response, 'text'):
                     st.session_state.messages.append({"role": "assistant", "content": response.text})
-                    with st.chat_message("assistant"): st.markdown(response.text)
+                    st.rerun()
             except Exception as e:
-                st.error(f"API Connection Error. Verify Billing/Key status.")
-else:
-    st.info("🦁 Welcome! Adjust the inputs in the sidebar and click 'Lock & Generate' to begin  Archie's day.")
+                st.error(f"API Error: Check Key status in AI Studio.")
