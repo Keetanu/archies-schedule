@@ -155,4 +155,13 @@ if st.session_state.init:
             with st.chat_message("user"): st.markdown(pr)
             try:
                 genai.configure(api_key="AIzaSyCXHF51cAI9MC6cJUHNNPEYzlD5fhP_SLQ")
-                model = genai.GenerativeM odel('gemini-1.5
+                model = genai.GenerativeModel('gemini-1.5-flash')
+                ctx = f"Archie 23mo. Wake: {wake_time}. Early Wake: {is_early_wake}. User: {pr}"
+                response = model.generate_content(ctx)
+                if response.text:
+                    st.session_state.messages.append({"role": "assistant", "content": response.text})
+                    with st.chat_message("assistant"): st.markdown(response.text)
+            except Exception as e:
+                st.error("Guide currently resting. Check API Key.")
+else:
+    st.info("🦁 Enter 4-digit times and click 'Lock & Gener ate' to start.")
