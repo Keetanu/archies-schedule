@@ -1,6 +1,5 @@
 import streamlit as st
 import google.generativeai as genai
-from google.generativeai.types import RequestOptions
 import pandas as pd
 from datetime import datetime, timedelta, time
 import urllib.parse
@@ -91,7 +90,7 @@ if lock or 'run' in st.session_state:
         st.table(df)
 
     with t_kitchen:
-        st.subheader("🥘 Archie's Menu")
+        st.subheader("🥘 Archie's Menu (Rotterdam)")
         st.markdown("**🍳 Breakfast:** Ragi Sheera / Scrambled Eggs")
         st.markdown("**🍚 Lunch:** Moong Dal Khichdi / Pumpkin Pasta")
         st.markdown("**🍲 Dinner:** Vegetable Upma / Mashed Potatoes & Cod")
@@ -107,14 +106,13 @@ if lock or 'run' in st.session_state:
             st.session_state.messages.append({"role": "user", "content": pr})
             with st.chat_message("user"): st.markdown(pr)
             try:
-                # BYPASSING v1beta EXPLICITLY
+                # Cleanest possible config for 2026
                 genai.configure(api_key="AIzaSyCXHF51cAI9MC6cJUHNNPEYzlD5fhP_SLQ")
                 model = genai.GenerativeModel('gemini-1.5-flash')
                 
-                # Using v1 stable options
+                # Standard call without experimental flags
                 res = model.generate_content(
-                    f"You are Archie's kid-friendly sleep guide. Context: Wake {wake_time}. Question: {pr}",
-                    request_options=RequestOptions(api_version='v1')
+                    f"You are Archie's kid-friendly sleep guide. Context: Wake {wake_time}. Question: {pr}"
                 )
                 
                 if res and res.text:
@@ -123,4 +121,4 @@ if lock or 'run' in st.session_state:
             except Exception as e:
                 st.error(f"Guide is resting: {str(e)}")
 else:
-    st.info("🦁 Enter Archie's wake-up (e.g., 735) and click Start!")
+    st.info("🦁 Enter Archie's wake-up (e.g., 735) and c lick Start!")
