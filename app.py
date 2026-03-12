@@ -14,7 +14,6 @@ st.markdown("""
     h1, h2, h3 { color: #2e7d32; font-family: 'Helvetica Neue', sans-serif; }
     .stMetric { background-color: #f1f8e9; padding: 15px; border-radius: 12px; }
     .stTable td { font-size: 16px !important; padding: 10px !important; }
-    /* Beautiful WhatsApp Button Styling */
     .whatsapp-btn {
         background-color: #25D366;
         color: white;
@@ -23,7 +22,7 @@ st.markdown("""
         text-decoration: none;
         font-weight: bold;
         display: inline-block;
-        margin-top: 10px;
+        margin: 10px 0;
     }
     </style>
     """, unsafe_allow_html=True)
@@ -43,7 +42,7 @@ with st.sidebar:
         night_wake_start = st.time_input("Woke up at", value=None)
         night_wake_end = st.time_input("Back to sleep at", value=None)
     
-    nap_start = st.time_input("😴 Nap Started At (Optional)", value=None)
+    nap_start_input = st.time_input("😴 Nap Started At (Optional)", value=None)
 
 # Calculations
 wake_dt = datetime.combine(today, wake_time)
@@ -57,7 +56,7 @@ if night_wake_start and night_wake_end:
 sleep_dt = datetime.combine(today - timedelta(days=1), prev_sleep_time)
 actual_night_sleep = ((wake_dt - sleep_dt).total_seconds() / 3600) - night_wake_duration
 nap_buffer = 6 if night_wake_duration < 0.5 else 5.5
-nap_start_actual = datetime.combine(today, nap_start) if nap_start else wake_dt + timedelta(hours=6)
+nap_start_actual = datetime.combine(today, nap_start_input) if nap_start_input else wake_dt + timedelta(hours=6)
 nap_end_dt = nap_start_actual + timedelta(minutes=90)
 bedtime_dt = nap_end_dt + timedelta(hours=6)
 
@@ -77,7 +76,7 @@ sched_list = [
     (bedtime_dt, "✨ Bedtime")
 ]
 
-# 4. WHATSAPP MESSAGE FORMATTING
+# 4. WHATSAPP LINK
 wa_message = f"*🦁 Archie's Schedule ({location})*\n\n"
 for t, act in sched_list:
     wa_message += f"• {t.strftime('%I:%M %p')}: {act}\n"
@@ -91,7 +90,7 @@ m1.metric("Night Sleep", f"{actual_night_sleep:.1f}h")
 m2.metric("Target Bedtime", bedtime_dt.strftime('%I:%M %p'))
 m3.metric("7AM Gap", f"{(wake_dt - datetime.combine(today, time(7,0))).total_seconds()/60 :.0f}m")
 
-st.markdown(f'<a href="{wa_url}" target="_blank" class="whatsapp-btn">📲 Share Schedule via WhatsApp</a>', unsafe_allow_html=True)
+st.markdown(f'<a href="{wa_url}" target="_blank" class="whatsapp-btn">📲 Share via WhatsApp</a>', unsafe_allow_html=True)
 
 st.divider()
 
@@ -103,19 +102,35 @@ with tab1:
     st.table(df_sched)
 
 with tab2:
-    st.subheader("Adenosine (Sleep Pressure) Levels")
-    # Improved graph labeling
-    times = [(wake_dt + timedelta(hours=i)) for i in range(16)]
-    # Simplified realistic pressure curve
-    pressure_values = [0, 15, 30, 45, 60, 75, 10, 20, 40, 60, 80, 100, 85, 60, 35, 10]
+    st.subheader("Adenosine (Sleep Pressure) Sequential Timeline")
     
+    # FIXED SEQUENTIAL X-AXIS LOGIC
+    # Generate range from wake-up to bedtime + 1 hour
+    total_hours = int((bedtime_dt - wake_dt).total_seconds() / 3600) + 2
+    chart_times = [wake_dt + timedelta(hours=i) for i in range(total_hours)]
+    
+    # Pressure Logic: Rise -> Dip at nap -> Rise to peak
+    pressures = []
+    for t in chart_times:
+        if t < nap_start_actual:
+            # Linear rise until nap
+            val = ((t - wake_dt).total_seconds() / 3600) * 15
+        elif nap_start_actual <= t <= nap_end_dt:
+            # Dip during nap
+            val = 10
+        else:
+            # Build back up to 100% at bedtime
+            val = 20 + (((t - nap_end_dt).total_seconds() / 3600) * 12)
+        pressures.append(min(val, 100))
+
     chart_df = pd.DataFrame({
-        'Clock Time': [t.strftime('%I %p') for t in times],
-        'Sleep Pressure (%)': pressure_values
-    }).set_index('Clock Time')
+        'Time': chart_times,
+        'Sleep Pressure (%)': pressures
+    }).set_index('Time')
     
+    # Area chart with continuous time axis
     st.area_chart(chart_df, color="#4caf50")
-    st.info("The dip in green shows the nap clearing brain fatigue before the final build-up to bedtime.")
+    st.caption("The graph follows Archie's specific day from wake-up to bedtime chronologically.")
 
 with tab3:
     if "messages" not in st.session_state: st.session_state.messages = []
@@ -125,6 +140,8 @@ with tab3:
         st.session_state.messages.append({"role": "user", "content": prompt})
         with st.chat_message("user"): st.markdown(prompt)
         model = genai.GenerativeModel('gemini-pro')
-        response = model.generate_content(f"Archie, 23mo. {location}. Night Sleep: {actual_night_sleep}h. {prompt}")
+        # Context injected to Gemini
+        ctx = f"Archie, 23mo. 7am target. Location: {location}. Wake: {wake_time}. Last sleep: {actual_night_sleep}h. User: {prompt}"
+        response = model.generate_content(ctx)
         st.session_state.messages.append({"role": "assistant", "content": response.text})
-        with st.chat_message("assistant"): st.markdown(response.text)
+        with st.chat_message("assistant"): st.markdown (response.text)
